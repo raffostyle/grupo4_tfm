@@ -1,0 +1,163 @@
+---
+title:    "NBA - ANÁLISIS CLUSTERING"
+license:  by-nc-sa
+urlcolor: blue
+output:
+  word_document:  default
+  html_document: 
+    theme:        cosmo 
+    highlight:    tango 
+    toc:          true
+    toc_float:    true
+    code_folding: show
+  epuRate::epurate:
+    toc:             TRUE
+    number_sections: FALSE
+    code_folding:    "show"
+  pdf_document:   default
+---
+
+<style>
+body {
+text-align: justify}
+</style>
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Empezamos el análisis de los tiros de los jugadores del NBA: 
+
+
+Importamos el fichero:
+
+```{r,warning=FALSE,message=FALSE}
+
+require(dplyr)
+require(MASS)
+require(caret)
+require(randomForest)
+require(factoextra)
+
+
+# Carga dataset
+
+path="C:/Users/rosa.colasuono/Documents/Master/Grupo 4 - MBDDS/Player_shot.csv"
+
+df_nba  <- read.table(path, header = TRUE, sep = "," ,fill = TRUE ) 
+str(df_nba)
+
+```
+
+En esta primera analisis de clusters nos hemos fijado en la ultima temporada.
+Aplicamos algunas transformaciones:
+
+1. Convertimos algunas variables en numericas;
+2. Quitamos los nulls;
+3. Quitamos las variables ctaegoricas del dataset;
+3. Creamos un row_names como concatenacion de PLAYER_NAME, TEAM_ABBREVIATION y seasson.
+
+## Preparación del dataset
+
+
+```{r ,warning=FALSE,message=FALSE}
+#df_nba<-subset(df_nba, seasson!="" )
+df_nba<-subset(df_nba, seasson=="2020-21" )
+#df_nba<-subset(df_nba, PLAYER_ID != '203124' )
+
+
+
+#Convert to numeric
+df_nba$Restricted.Area.FGA          = as.numeric(df_nba$Restricted.Area.FGA)
+df_nba$Restricted.Area.FG_PCT       = as.numeric(df_nba$Restricted.Area.FG_PCT)   
+df_nba$In.The.Paint..Non.RA..FG_PCT = as.numeric(df_nba$In.The.Paint..Non.RA..FG_PCT) 
+df_nba$Mid.Range.FGA                = as.numeric(df_nba$Mid.Range.FGA) 
+df_nba$Left.Corner.3.FGM            = as.numeric(df_nba$Corner.3.FGM) 
+df_nba$Left.Corner.3.FG_PCT         = as.numeric(df_nba$Left.Corner.3.FG_PCT) 
+df_nba$Right.Corner.3.FGA           = as.numeric(df_nba$Right.Corner.3.FGA) 
+df_nba$Above.the.Break.3.FGM        = as.numeric(df_nba$Above.the.Break.3.FGM) 
+df_nba$In.The.Paint..Non.RA..FGM    = as.numeric(df_nba$In.The.Paint..Non.RA..FGM)
+df_nba$Backcourt.FG_PCT             = as.numeric(df_nba$Backcourt.FG_PCT    )
+
+
+#Remove
+df_nba <- subset( df_nba, select = -c(PLAYER_ID, NICKNAME,TEAM_ID ) )
+
+
+#Concatenate
+df_nba['NAME_TEAM'] = paste0(df_nba$PLAYER_NAME,'_',df_nba$TEAM_ABBREVIATION,'_',df_nba$seasson)
+
+
+#Remove(Backcourt.FG_PCT,Backcourt.FGM solo porque por temporada salen siempre 0 y el Kmeans devuuelve error)
+df_nba <- subset( df_nba, select = -c(PLAYER_NAME,TEAM_ABBREVIATION,seasson,Backcourt.FG_PCT,Backcourt.FGM) )
+
+
+#Fill 0 na
+df_nba[is.na(df_nba)] <- 0
+
+
+#Row_num
+row.names(df_nba) <- df_nba[,24]
+df_nba[,24] <- NULL
+
+summary(df_nba)
+
+```
+
+
+
+
+<br>
+
+Notamos en el dataset que los rangos de la distribución de las variables son muy distintos entre ellas y por esto escalamos los datos.
+
+```{r}
+df_nba <- scale(df_nba)
+```
+
+
+
+### Elbow
+
+```{r,warning=FALSE,message=FALSE}
+
+# Visualización del elbow method
+fviz_nbclust(x = df_nba, FUNcluster = kmeans, method = "wss", k.max = 10, 
+             diss = get_dist(df_nba, method = "euclidean"), nstart = 51)
+
+```
+<br>
+
+
+Utilizando el metodo elbow notamos como a partir de 4 clusters la reducción en la suma total de cuadrados internos parece estabilizarse, indicando que K = 4 parece una buena opción.
+
+
+
+```{r,warning=FALSE,message=FALSE}
+
+set.seed(123)
+km_clusters <- kmeans(x = df_nba, centers = 4, nstart = 50)
+
+
+fviz_cluster(object = km_clusters, data = df_nba, show.clust.cent = TRUE,
+             ellipse.type = "euclid", star.plot = TRUE, geom = "text", repel = TRUE) +
+  labs(title = "Resultados clustering K-means") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+
+```
+<br>
+
+
+En el grafico se notan 4 clusters: el cluster de color verde representa los jugadores que normalmente no son tiradores de tres, sino que son pivots.
+En el cluster morado hay algunos outliers que tendremos que quitar como Cameron Reynolds que ha jugado muy pocos partidos hasta ahora, pero parece ser el cluster de los tiradores de 3 puntos. 
+Los otros dos clusters todavia necesitan más analisis.
+
+
+
+
+
